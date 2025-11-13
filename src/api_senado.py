@@ -1,24 +1,48 @@
-## Código 1
 import requests
 import pandas as pd
 from typing import Dict, List
 from processador_dados import ProcessadorDadosSenado
+import ssl
+from requests.adapters import HTTPAdapter
+
+# Adaptador customizado para forçar o TLSv1.2 (compatível com urllib3 >= 2.0)
+class TLSv1_2Adapter(HTTPAdapter):
+    def __init__(self, *args, **kwargs):
+        # Cria um contexto SSL que só permite TLSv1.2
+        self.ssl_context = ssl.create_default_context()
+        self.ssl_context.minimum_version = ssl.TLSVersion.TLSv1_2
+        self.ssl_context.maximum_version = ssl.TLSVersion.TLSv1_2
+        super().__init__(*args, **kwargs)
+
+    def init_poolmanager(self, connections, maxsize, block=False):
+        # Usa o contexto SSL customizado no PoolManager
+        self.poolmanager = requests.packages.urllib3.PoolManager(
+            num_pools=connections,
+            maxsize=maxsize,
+            block=block,
+            ssl_context=self.ssl_context
+        )
 
 class APISenado:
     def __init__(self):
         self.base_url = "https://legis.senado.leg.br/dadosabertos"
         self.session = requests.Session()
+        
+        # Monta o adaptador para todas as requisições HTTPS
+        self.session.mount('https://', TLSv1_2Adapter()) 
+        
         self.session.headers.update({
             'Accept': 'application/json',
             'User-Agent': 'Python-API-Senado/1.0'
         })
-    
+            
     def _fazer_requisicao(self, endpoint: str, params: Dict = {}) -> Dict:
         """Faz requisição para a API e trata erros"""
         url = f"{self.base_url}/{endpoint}"
         
         try:
             response = self.session.get(url, params=params)
+            #response = self.session.get(url, params=params, verify=False)
             response.raise_for_status()
             return response.json()
         except requests.exceptions.RequestException as e:
